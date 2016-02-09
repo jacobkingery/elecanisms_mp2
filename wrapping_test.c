@@ -23,6 +23,7 @@ WORD LAST_ANGLE = (WORD) 0;
 int8_t WRAPS = 0;
 
 void check_wraps() {
+    // If the angle jumps from <~5 degrees to >~355 degrees, or vice-versa, we wrapped
     if ((CURRENT_ANGLE.w < 0x00E4) && (LAST_ANGLE.w > 0x3F1B)) {
         WRAPS += 1;
     } else if ((CURRENT_ANGLE.w > 0x3F1B) && (LAST_ANGLE.w < 0x00E4)) {
@@ -35,11 +36,13 @@ WORD enc_readReg(WORD address) {
     cmd.w = 0x4000|address.w; //set 2nd MSB to 1 for a read
     cmd.w |= parity(cmd.w)<<15; //calculate even parity for
 
+    // Tell the sensor which register we want to read
     pin_clear(ENC_NCS);
     spi_transfer(&spi1, cmd.b[1]);
     spi_transfer(&spi1, cmd.b[0]);
     pin_set(ENC_NCS);
 
+    // Get the reading from the sensor
     pin_clear(ENC_NCS);
     result.b[1] = spi_transfer(&spi1, 0);
     result.b[0] = spi_transfer(&spi1, 0);
@@ -49,8 +52,9 @@ WORD enc_readReg(WORD address) {
 
 WORD enc_getAngle() {
     WORD result = enc_readReg((WORD) REG_ANG_ADDR);
+    // If the parity of the result is wrong, don't use the result
     if (parity(result.w)) {
-        return  LAST_ANGLE;
+        return LAST_ANGLE;
     } else {
         result.i = (int16_t) ((result.w & ENC_MASK) - (OFFSET.w & ENC_MASK));
         return result;
