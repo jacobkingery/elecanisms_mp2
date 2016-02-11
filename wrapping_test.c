@@ -9,7 +9,8 @@
 
 #define ENC_READ_REG    1
 #define GET_OFFSET      2
-#define GET_ANGLE       3
+#define GET_RAW_ANGLE   3
+#define GET_ANGLE       4
 
 #define REG_ANG_ADDR    0x3FFF
 #define ENC_MASK        0x3FFF
@@ -20,6 +21,7 @@ _PIN *ENC_NCS;
 WORD OFFSET = (WORD) 0;
 WORD CURRENT_ANGLE = (WORD) 0;
 WORD LAST_ANGLE = (WORD) 0;
+WORD UNWRAPPED_ANGLE = (WORD) 0;
 int8_t WRAPS = 0;
 
 void check_wraps() {
@@ -29,6 +31,14 @@ void check_wraps() {
     } else if ((CURRENT_ANGLE.w > 0x3F1B) && (LAST_ANGLE.w < 0x00E4)) {
         WRAPS -= 1;
     }
+}
+
+WORD process_wraps() {
+    // Apply WRAPS to CURRENT_ANGLE so that we can actually know where we are
+    check_wraps();
+    WORD angle = CURRENT_ANGLE;
+    angle.w += ENC_MASK * WRAPS;
+    return angle;
 }
 
 WORD enc_readReg(WORD address) {
@@ -55,10 +65,10 @@ WORD enc_getAngle() {
     // If the parity of the result is wrong, don't use the result
     if (parity(result.w)) {
         return LAST_ANGLE;
-    } else {
-        result.i = (int16_t) ((result.w & ENC_MASK) - (OFFSET.w & ENC_MASK));
-        return result;
     }
+    // Otherwise, subtract the OFFSET and return the value
+    result.w = ((result.w & ENC_MASK) - (OFFSET.w & ENC_MASK)) & ENC_MASK;
+    return result;
 }
 
 void VendorRequests(void) {
@@ -79,9 +89,15 @@ void VendorRequests(void) {
             BD[EP0IN].bytecount = 2;    // set EP0 IN byte count to 4
             BD[EP0IN].status = 0xC8;    // send packet as DATA1, set UOWN bit
             break;
-        case GET_ANGLE:
+        case GET_RAW_ANGLE:
             BD[EP0IN].address[0] = CURRENT_ANGLE.b[0];
             BD[EP0IN].address[1] = CURRENT_ANGLE.b[1];
+            BD[EP0IN].bytecount = 2;    // set EP0 IN byte count to 4
+            BD[EP0IN].status = 0xC8;    // send packet as DATA1, set UOWN bit
+            break;
+        case GET_ANGLE:
+            BD[EP0IN].address[0] = UNWRAPPED_ANGLE.b[0];
+            BD[EP0IN].address[1] = UNWRAPPED_ANGLE.b[1];
             BD[EP0IN].bytecount = 2;    // set EP0 IN byte count to 4
             BD[EP0IN].status = 0xC8;    // send packet as DATA1, set UOWN bit
             break;
@@ -118,19 +134,22 @@ int16_t main(void) {
     spi_open(&spi1, ENC_MISO, ENC_MOSI, ENC_SCK, 2e6, 1);
 
     // Get initial angle offset
-    OFFSET = CURRENT_ANGLE = enc_getAngle(0);
+    OFFSET = CURRENT_ANGLE = enc_getAngle();
+    UNWRAPPED_ANGLE = process_wraps();
 
     InitUSB();                              // initialize the USB registers and serial interface engine
     while (USB_USWSTAT!=CONFIG_STATE) {     // while the peripheral is not configured...
         LAST_ANGLE = CURRENT_ANGLE;
-        CURRENT_ANGLE = enc_getAngle(0);
-        check_wraps();
+        CURRENT_ANGLE = enc_getAngle();
+        // check_wraps();
+        UNWRAPPED_ANGLE = process_wraps();
         ServiceUSB();                       // ...service USB requests
     }
     while (1) {
         LAST_ANGLE = CURRENT_ANGLE;
-        CURRENT_ANGLE = enc_getAngle(0);
-        check_wraps();
+        CURRENT_ANGLE = enc_getAngle();
+        // check_wraps();
+        UNWRAPPED_ANGLE = process_wraps();
         ServiceUSB();                       // service any pending USB requests
     }
 }

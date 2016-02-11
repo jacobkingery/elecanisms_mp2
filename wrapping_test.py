@@ -6,7 +6,8 @@ class encodertest:
     def __init__(self):
         self.ENC_READ_REG = 1
         self.GET_OFFSET = 2
-        self.GET_ANGLE = 3
+        self.GET_RAW_ANGLE = 3
+        self.GET_ANGLE = 4
         self.dev = usb.core.find(idVendor = 0x6666, idProduct = 0x0003)
         if self.dev is None:
             raise ValueError('no USB device found matching idVendor = 0x6666 and idProduct = 0x0003')
@@ -40,6 +41,14 @@ class encodertest:
             print "Could not send GET_OFFSET vendor request."
         else:
             return ret
+
+    def get_raw_angle(self):
+        try:
+            ret = self.dev.ctrl_transfer(0xC0, self.GET_RAW_ANGLE, 0, 0, 2)
+        except usb.core.USBError:
+            print "Could not send GET_RAW_ANGLE vendor request."
+        else:
+            return ret
     
     def get_angle(self):
         try:
@@ -63,9 +72,13 @@ def twos_comp(val, bits):
         val = val - (1 << bits)        # compute negative value
     return val                         # return positive value as is
 
+
 myEncoderTest = encodertest()
 mask = 0x3FFF  # Sets first two bits (parity and error flag) to 0
 while True:
     offsetBytes = myEncoderTest.get_offset()
+    rawBytes = myEncoderTest.get_raw_angle()
     angBytes = myEncoderTest.get_angle()
-    print float(toWord(offsetBytes)&mask) / mask * 360, float(toWord(angBytes)&mask) / mask * 360
+    print float(toWord(offsetBytes)) / mask * 360,
+    print float(toWord(rawBytes)) / mask * 360,
+    print float(twos_comp(toWord(angBytes), 16)) / mask * 360
