@@ -14,10 +14,11 @@
 #define GET_ANGLE       2
 #define GET_SPEED       3
 #define GET_DIRECTION   4
+#define SET_PARAMETER   5
 
 #define REG_ANG_ADDR    0x3FFF
 #define ENC_MASK        0x3FFF
-#define CUR_OFFSET      0x01FF
+#define CUR_OFFSET      0x8000
 
 _PIN *ENC_SCK, *ENC_MISO, *ENC_MOSI;
 _PIN *ENC_NCS;
@@ -32,7 +33,17 @@ WORD CURRENT_CURRENT = (WORD) 0;
 WORD LAST_CURRENT = (WORD) 0;
 
 WORD CURRENT_SPEED = (WORD) 0;
-WORD CURRENT_DIRECTION = (WORD) 0;
+uint8_t CURRENT_DIRECTION = 0;
+
+uint8_t K_THETA_TAU = 1;
+uint8_t K_TAU_V = 1;
+uint8_t K_I_TAU = 1;
+
+uint8_t *PARAMETERS[] = {
+    &K_THETA_TAU,
+    &K_TAU_V,
+    &K_I_TAU
+};
 
 WORD enc_readReg(WORD address) {
     WORD cmd, result;
@@ -82,20 +93,24 @@ void get_angle() {
 
 void get_current() {
     LAST_CURRENT = CURRENT_CURRENT;
-    CURRENT_CURRENT.w = (pin_read(&A[0])>>6) - CUR_OFFSET;
+    CURRENT_CURRENT.w = pin_read(&A[0]) - CUR_OFFSET;
 }
 
 void set_velocity() {
-    if (UNWRAPPED_ANGLE.i > CURRENT_CURRENT.i) {
-        CURRENT_SPEED.w = UNWRAPPED_ANGLE.w - CURRENT_CURRENT.w;
-        CURRENT_DIRECTION.b[0] = 0;
+    WORD tau_set, tau_meas, tau_error;
+    tau_set.w = UNWRAPPED_ANGLE.w * K_THETA_TAU;
+    tau_meas.w = CURRENT_CURRENT.w * K_I_TAU;
+
+    if (tau_set.i > tau_meas.i) {
+        CURRENT_DIRECTION = 0;
+        tau_error.w = tau_set.w - tau_meas.w;
     } else {
-        CURRENT_SPEED.w = CURRENT_CURRENT.w - UNWRAPPED_ANGLE.w;
-        CURRENT_DIRECTION.b[0] = 1;
+        CURRENT_DIRECTION = 1;
+        tau_error.w = tau_meas.w - tau_set.w;
     }
-    CURRENT_SPEED.w += 0x1000;
-    CURRENT_SPEED.w *= 2;
-    md_velocity(&md1, CURRENT_SPEED.w, CURRENT_DIRECTION.b[0]);
+
+    CURRENT_SPEED.w = tau_error.w * K_TAU_V + 0x1000;
+    md_velocity(&md1, CURRENT_SPEED.w, CURRENT_DIRECTION);
 }
 
 void VendorRequests(void) {
@@ -103,25 +118,33 @@ void VendorRequests(void) {
         case GET_CURRENT:
             BD[EP0IN].address[0] = CURRENT_CURRENT.b[0];
             BD[EP0IN].address[1] = CURRENT_CURRENT.b[1];
-            BD[EP0IN].bytecount = 2;    // set EP0 IN byte count to 4
-            BD[EP0IN].status = 0xC8;    // send packet as DATA1, set UOWN bit
+            BD[EP0IN].bytecount = 2;
+            BD[EP0IN].status = 0xC8;
             break;
         case GET_ANGLE:
             BD[EP0IN].address[0] = UNWRAPPED_ANGLE.b[0];
             BD[EP0IN].address[1] = UNWRAPPED_ANGLE.b[1];
-            BD[EP0IN].bytecount = 2;    // set EP0 IN byte count to 4
-            BD[EP0IN].status = 0xC8;    // send packet as DATA1, set UOWN bit
+            BD[EP0IN].bytecount = 2;
+            BD[EP0IN].status = 0xC8;
             break;
         case GET_SPEED:
             BD[EP0IN].address[0] = CURRENT_SPEED.b[0];
             BD[EP0IN].address[1] = CURRENT_SPEED.b[1];
-            BD[EP0IN].bytecount = 2;    // set EP0 IN byte count to 4
-            BD[EP0IN].status = 0xC8;    // send packet as DATA1, set UOWN bit
+            BD[EP0IN].bytecount = 2;
+            BD[EP0IN].status = 0xC8;
             break;
         case GET_DIRECTION:
-            BD[EP0IN].address[0] = CURRENT_DIRECTION.b[0];
-            BD[EP0IN].bytecount = 1;    // set EP0 IN byte count to 4
-            BD[EP0IN].status = 0xC8;    // send packet as DATA1, set UOWN bit
+            BD[EP0IN].address[0] = CURRENT_DIRECTION;
+            BD[EP0IN].bytecount = 1;
+            BD[EP0IN].status = 0xC8;
+            break;
+        case SET_PARAMETER:
+            ;
+            uint8_t param_value = USB_setup.wValue.b[0];
+            uint8_t param_index = USB_setup.wValue.b[1];
+            *PARAMETERS[param_index] = param_value;
+            BD[EP0IN].bytecount = 0;
+            BD[EP0IN].status = 0xC8;
             break;
         default:
             USB_error_flags |= 0x01;    // set Request Error Flag

@@ -1,4 +1,5 @@
 import usb.core
+import cv2
 import time
 import matplotlib.pyplot as plt
 
@@ -9,13 +10,26 @@ class CurrentTest:
         self.GET_ANGLE     = 2
         self.GET_SPEED     = 3
         self.GET_DIRECTION = 4
+        self.SET_PARAMETER = 5
         self.dev = usb.core.find(idVendor = 0x6666, idProduct = 0x0003)
         if self.dev is None:
             raise ValueError('no USB device found matching idVendor = 0x6666 and idProduct = 0x0003')
         self.dev.set_configuration()
 
+        self.parameters = [
+            ['k_theta_tau', 1],
+            ['k_tau_v', 1],
+            ['k_i_tau', 1]
+        ]
+        cv2.namedWindow('Set Parameters')
+        for parameter in self.parameters:
+            cv2.createTrackbar(parameter[0], 'Set Parameters', parameter[1], 5, self.nothing)
+
     def close(self):
         self.dev = None
+
+    def nothing(self, value):
+        pass
 
     def get_current(self):
         try:
@@ -49,6 +63,20 @@ class CurrentTest:
         else:
             return ret
 
+    def update_parameters(self):
+        for i,parameter in enumerate(self.parameters):
+            value = cv2.getTrackbarPos(parameter[0], 'Set Parameters')
+            if value != parameter[1]:
+                self.parameters[i][1] = value
+                self.set_parameter(value, i)
+
+    def set_parameter(self, value, index):
+        try:
+            word = toWord((value, index))
+            self.dev.ctrl_transfer(0x40, self.SET_PARAMETER, word, 0)
+        except usb.core.USBError:
+            print "Could not send SET_VALS vendor request."
+
 def toWord(byteArray):
     val = 0
     for i,byte in enumerate(byteArray):
@@ -74,20 +102,19 @@ def toAngle(val):
 ct = CurrentTest()
 plt.ion()
 plt.figure()
-# plt.ylim((-3.3, 3.3))
+plt.ylim((-1.1, 1.1))
 while True:
-    # try:
+    ct.update_parameters()
+
     current = twos_comp(toWord(ct.get_current()), 16) / float(0xFFFF)
     angle = twos_comp(toWord(ct.get_angle()), 16) / float(0xFFFF)
     speed = toWord(ct.get_speed()) / float(0xFFFF)
-    direction = toWord(ct.get_direction()) / float(0xFFFF)
+    direction = toWord(ct.get_direction()) or -1
     now = time.time()
     plt.scatter(now, current, color='b')
     plt.scatter(now, angle, color='r')
-    plt.scatter(now, speed, color='g')
-    plt.scatter(now, direction*50000, color='k')
+    plt.scatter(now, speed * direction, color='g')
     plt.draw()
     plt.pause(0.01)
-    # except:
-        # print 'error'
-        # pass
+
+    cv2.waitKey(1)
