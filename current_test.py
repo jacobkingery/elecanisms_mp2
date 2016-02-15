@@ -1,5 +1,6 @@
 import usb.core
 import time
+import matplotlib.pyplot as plt
 
 class CurrentTest:
 
@@ -50,8 +51,15 @@ def toCurrent(val):
     return (toVoltage(val) - 1.65) / 0.75
 
 ct = CurrentTest()
+plt.ion()
+plt.figure()
+plt.ylim((-3.3, 3.3))
 while True:
-    current = toWord(ct.get_current())
-    last = toWord(ct.get_last())
-    print '{:016b}'.format(last), '{:016b}'.format(current)
-    print '{:f}'.format(toCurrent(last)), '{:f}'.format(toCurrent(current))
+    try:
+        current = toCurrent(toWord(ct.get_current()))
+        now = time.time()
+        plt.scatter(now, current)
+        plt.draw()
+        plt.pause(0.01)
+    except:
+        pass

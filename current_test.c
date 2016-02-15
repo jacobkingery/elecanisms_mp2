@@ -52,7 +52,7 @@ int16_t main(void) {
 
     pin_analogIn(&A[0]);
 
-    md_velocity(&md1, 0x4000, 1);
+    md_velocity(&md1, 0xF000, 1);
 
     InitUSB();                              // initialize the USB registers and serial interface engine
     while (USB_USWSTAT!=CONFIG_STATE) {     // while the peripheral is not configured...
