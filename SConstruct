@@ -22,13 +22,15 @@ env.Append(BUILDERS = {'List' : list})
 
 env.Program('mp2', ['mp2.c',
                     '../lib/descriptors.c',
-                    '../lib/timer.c',
+                    '../lib/common.c',
                     '../lib/ui.c',
                     '../lib/pin.c',
                     '../lib/spi.c',
+                    '../lib/timer.c',
                     '../lib/oc.c',
                     '../lib/md.c',
-                    '../lib/common.c'])
+                    '../lib/usb.c'
+                    ])
 
 print('Creating builder to load hex file via bootloader...')
 def load_function(target, source, env):
