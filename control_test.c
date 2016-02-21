@@ -12,9 +12,10 @@
 
 #define GET_CURRENT     1
 #define GET_ANGLE       2
-#define GET_SPEED       3
-#define GET_DIRECTION   4
-#define SET_PARAMETER   5
+#define GET_VELOCITY    3
+#define GET_SPEED       4
+#define GET_DIRECTION   5
+#define SET_PARAMETER   6
 
 #define REG_ANG_ADDR    0x3FFF
 #define ENC_MASK        0x3FFF
@@ -27,6 +28,7 @@ WORD OFFSET = (WORD) 0;
 WORD CURRENT_ANGLE = (WORD) 0;
 WORD LAST_ANGLE = (WORD) 0;
 WORD UNWRAPPED_ANGLE = (WORD) 0;
+WORD VELOCITY = (WORD) 0;
 int8_t WRAPS = 0;
 
 WORD CURRENT_CURRENT = (WORD) 0;
@@ -35,14 +37,10 @@ WORD LAST_CURRENT = (WORD) 0;
 WORD CURRENT_SPEED = (WORD) 0;
 uint8_t CURRENT_DIRECTION = 0;
 
-uint8_t K_THETA_TAU = 1;
-uint8_t K_TAU_V = 1;
-uint8_t K_I_TAU = 1;
+uint8_t K_DAMPER = 1;
 
 uint8_t *PARAMETERS[] = {
-    &K_THETA_TAU,
-    &K_TAU_V,
-    &K_I_TAU
+    &K_DAMPER
 };
 
 WORD enc_readReg(WORD address) {
@@ -88,7 +86,9 @@ void get_angle() {
     LAST_ANGLE = CURRENT_ANGLE;
     get_raw_angle();
     check_wraps();
+    uint16_t last = UNWRAPPED_ANGLE.w;
     UNWRAPPED_ANGLE.w = CURRENT_ANGLE.w + ENC_MASK * WRAPS;
+    VELOCITY.w = (UNWRAPPED_ANGLE.w - last)<<9;
 }
 
 void get_current() {
@@ -96,21 +96,20 @@ void get_current() {
     CURRENT_CURRENT.w = pin_read(&A[0]) - CUR_OFFSET;
 }
 
-void set_velocity() {
-    WORD tau_set, tau_meas, tau_error;
-    tau_set.w = UNWRAPPED_ANGLE.w * K_THETA_TAU;
-    tau_meas.w = CURRENT_CURRENT.w * K_I_TAU;
-
-    if (tau_set.i > tau_meas.i) {
-        CURRENT_DIRECTION = 0;
-        tau_error.w = tau_set.w - tau_meas.w;
-    } else {
+void set_velocity(_TIMER *self) {
+    // Set motor velocity 
+    pin_set(&D[13]);
+    if (VELOCITY.i > 0) {
         CURRENT_DIRECTION = 1;
-        tau_error.w = tau_meas.w - tau_set.w;
+        CURRENT_SPEED.w = VELOCITY.w;
+    } else {
+        CURRENT_DIRECTION = 0;
+        CURRENT_SPEED.w = -VELOCITY.w;
     }
+    CURRENT_SPEED.w = CURRENT_SPEED.w * K_DAMPER + 0x1000;
 
-    CURRENT_SPEED.w = tau_error.w * K_TAU_V + 0x1000;
     md_velocity(&md1, CURRENT_SPEED.w, CURRENT_DIRECTION);
+    pin_clear(&D[13]);
 }
 
 void VendorRequests(void) {
@@ -124,6 +123,12 @@ void VendorRequests(void) {
         case GET_ANGLE:
             BD[EP0IN].address[0] = UNWRAPPED_ANGLE.b[0];
             BD[EP0IN].address[1] = UNWRAPPED_ANGLE.b[1];
+            BD[EP0IN].bytecount = 2;
+            BD[EP0IN].status = 0xC8;
+            break;
+        case GET_VELOCITY:
+            BD[EP0IN].address[0] = VELOCITY.b[0];
+            BD[EP0IN].address[1] = VELOCITY.b[1];
             BD[EP0IN].bytecount = 2;
             BD[EP0IN].status = 0xC8;
             break;
@@ -198,10 +203,13 @@ int16_t main(void) {
         get_current();
         ServiceUSB();
     }
+
+    pin_digitalOut(&D[13]);
+    pin_set(&D[13]);
+    timer_every(&timer2, 0.01, set_velocity);
     while (1) {
         get_angle();
         get_current();
-        set_velocity();
         ServiceUSB();
     }
 }

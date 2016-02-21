@@ -8,18 +8,17 @@ class CurrentTest:
     def __init__(self):
         self.GET_CURRENT   = 1
         self.GET_ANGLE     = 2
-        self.GET_SPEED     = 3
-        self.GET_DIRECTION = 4
-        self.SET_PARAMETER = 5
+        self.GET_VELOCITY  = 3
+        self.GET_SPEED     = 4
+        self.GET_DIRECTION = 5
+        self.SET_PARAMETER = 6
         self.dev = usb.core.find(idVendor = 0x6666, idProduct = 0x0003)
         if self.dev is None:
             raise ValueError('no USB device found matching idVendor = 0x6666 and idProduct = 0x0003')
         self.dev.set_configuration()
 
         self.parameters = [
-            ['k_theta_tau', 1],
-            ['k_tau_v', 1],
-            ['k_i_tau', 1]
+            ['k_damper', 1]
         ]
         cv2.namedWindow('Set Parameters')
         for parameter in self.parameters:
@@ -44,6 +43,14 @@ class CurrentTest:
             ret = self.dev.ctrl_transfer(0xC0, self.GET_ANGLE, 0, 0, 2)
         except usb.core.USBError:
             print "Could not send GET_ANGLE vendor request."
+        else:
+            return ret
+
+    def get_velocity(self):
+        try:
+            ret = self.dev.ctrl_transfer(0xC0, self.GET_VELOCITY, 0, 0, 2)
+        except usb.core.USBError:
+            print "Could not send GET_VELOCITY vendor request."
         else:
             return ret
 
@@ -99,20 +106,22 @@ def toCurrent(val):
 def toAngle(val):
     return float(twos_comp(val, 16)) / 0x3FFF * 360
 
+max_val = float(0xFFFF)
 ct = CurrentTest()
 plt.ion()
 plt.figure()
 plt.ylim((-1.1, 1.1))
 while True:
     ct.update_parameters()
-
-    current = twos_comp(toWord(ct.get_current()), 16) / float(0xFFFF)
-    angle = twos_comp(toWord(ct.get_angle()), 16) / float(0xFFFF)
-    speed = toWord(ct.get_speed()) / float(0xFFFF)
+    current = twos_comp(toWord(ct.get_current()), 16) / max_val
+    angle = twos_comp(toWord(ct.get_angle()), 16) / max_val
+    velocity = twos_comp(toWord(ct.get_velocity()), 16) /max_val
+    speed = toWord(ct.get_speed()) / max_val
     direction = toWord(ct.get_direction()) or -1
     now = time.time()
     plt.scatter(now, current, color='b')
     plt.scatter(now, angle, color='r')
+    plt.scatter(now, velocity, color='k')
     plt.scatter(now, speed * direction, color='g')
     plt.draw()
     plt.pause(0.01)
