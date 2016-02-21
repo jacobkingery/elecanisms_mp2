@@ -55,7 +55,7 @@ uint8_t PARAMETERS[] = {
 };
 
 // Texture parameters
-uint16_t TEX_SPEED = 0x2000;
+uint16_t TEX_SPEED = 0x1000;
 uint16_t TEX_TOLERANCE = 0x0400;
 uint16_t TEX_BUMPS[] = {
     0xD000,
@@ -67,7 +67,7 @@ uint16_t TEX_BUMPS[] = {
 uint8_t TEX_NUM_BUMPS = sizeof(TEX_BUMPS)/sizeof(TEX_BUMPS[0]);
 
 // Wall parameters
-uint16_t WALL_SPEED = 0x5555;
+uint16_t WALL_SPEED = 0x4000;
 int16_t WALL_LOCATION = 0x2000;
 
 WORD enc_readReg(WORD address) {
@@ -103,7 +103,7 @@ void get_readings() {
     LAST_ANGLE = ANGLE;
     WORD result = enc_readReg((WORD) REG_ANG_ADDR);
     if (!parity(result.w)) {
-        ANGLE.w = ((result.w & ENC_MASK) - (ANG_OFFSET.w & ENC_MASK)) & ENC_MASK;
+        ANGLE.w = ((result.w & ENC_MASK) - ANG_OFFSET.w) & ENC_MASK;
     }
 
     // Check for wrapping; if the angle jumps from <~20 degrees
@@ -119,8 +119,8 @@ void get_readings() {
     UNWRAPPED_ANGLE.w = ANGLE.w + ENC_MASK * WRAPS;
 
     // Calculate velocity as (change in angle) / (time between readings)
-    // Divide by 8 to avoid overflow
-    VELOCITY.w = (UNWRAPPED_ANGLE.w - last) * (READ_FREQ / 8);
+    // Divide by 16 to avoid overflow
+    VELOCITY.w = (UNWRAPPED_ANGLE.w - last) * (READ_FREQ / 16);
 }
 
 void use_spring() {
